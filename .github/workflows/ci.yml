@@ -1,0 +1,42 @@
+name: CI
+
+# dist/ is committed because the runner executes it directly, which means it can
+# drift from src/ silently — the action would keep working while shipping stale
+# behaviour. This rebuilds and fails if the result differs from what is checked in.
+on:
+  push:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 24
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Rebuild
+        run: npm run build
+
+      - name: Check dist is current
+        run: |
+          if ! git diff --quiet -- dist; then
+            echo "::error::dist/ is stale. Run 'npm run build' and commit the result."
+            git diff --stat -- dist
+            exit 1
+          fi
+          echo "dist/ matches src/."
