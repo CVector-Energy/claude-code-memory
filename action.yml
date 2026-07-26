@@ -1,6 +1,6 @@
 name: 'Claude Code memory'
 description: >
-  Restore the repo-wide Claude Code auto-memory store, and save it back when the job finishes — whether the job passed or failed. Use this once, before the step that runs Claude Code. There is no companion save action.
+  Restore the repo-wide Claude Code auto-memory store, and save it back when the job finishes.
 
 inputs:
   snapshot:
@@ -20,12 +20,7 @@ outputs:
     description: >
       Where the pre-run copy of the store was written, when `snapshot` is enabled. Copy it back over `path` to persist the store as it was before this run.
 
-# A JavaScript action rather than a composite one, for one reason: only a
-# JavaScript action can declare its own post step, and only `post-if: always()`
-# saves the store when the job is already failing. `actions/cache` hardcodes
-# `post-if: success()`, and its `save-always` input is documented as not working,
-# so a composite wrapper around it could never save on a failing job — often the
-# run whose memories matter most.
+# A JavaScript action rather than a composite one, so that it can declare its own post step.
 runs:
   using: node24
   main: dist/restore.mjs

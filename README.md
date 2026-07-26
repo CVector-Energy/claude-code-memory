@@ -49,15 +49,11 @@ Nothing else is required, and there is nothing to add for a job that fails: the 
 
 ## How It Works
 
-**The store is saved even when the job is failing.** That is why this is a JavaScript action rather than a composite one: only a JavaScript action can declare its own post step, and only `post-if: always()` runs it after a failure. `actions/cache` hardcodes `post-if: success()` and its `save-always` input is documented as not working, so any wrapper around it silently loses the memories from failing runs — often the runs whose memories matter most.
+**The store is saved even when the job is failing.**
 
-**The path is derived, not configured.** Claude Code stores auto-memory at `~/.claude/projects/<sanitized-cwd>/memory/`, where the directory name is the working directory with its separators replaced — on a runner, `/home/runner/work/my-repo/my-repo` becomes `-home-runner-work-my-repo-my-repo`. This action computes that same path, so the cached path is by construction the path Claude Code reads. Pinning `autoMemoryDirectory` in settings would work too, but it splits one fact across two places that must agree, and a workflow that cached one path while the agent wrote to another looks exactly like an agent that never remembers anything.
+Claude Code stores auto-memory at `~/.claude/projects/<sanitized-cwd>/memory/`, where the directory name is the working directory with its separators replaced — on a runner, `/home/runner/work/my-repo/my-repo` becomes `-home-runner-work-my-repo-my-repo`. This action computes that same path, so the cached path is by construction the path Claude Code reads.
 
-**The cache key carries no branch or ref.** What an agent learns is knowledge about the repository, not about one branch, and a scheduled job needs to read whatever the last run wrote. Note that GitHub still scopes cache *reads* to the current branch plus the default branch, so a store saved on a feature branch is invisible to other branches until it lands on the default branch. That is a platform limit rather than a choice made here.
-
-**The key is unique per run, so every run saves.** Reads all come through the `claude-memory-v1-` prefix, newest entry first.
-
-**An empty store is still saved.** An agent that prunes every memory leaves the directory empty, and that empty store is what has to persist — otherwise the deletions silently come back on the next restore. The action creates the directory before the save so there is always something to store.
+The action aims to share knowledge broadly across runs on the repo. GitHub cache mechanism limits this somewhat; memory saved on a branch won't be accessible to other branches unless it is merged to the default branch.
 
 **Neither step can fail your job.** A cache miss is normal and a cache outage should not turn a build red, so both the restore and the save log a warning and carry on. The worst case is an agent that starts without prior memory.
 
@@ -84,8 +80,6 @@ A job that prunes the store as part of its work — promoting memories into docu
 ## Notes
 
 Memory is agent-authored text fed back into a privileged context on later runs. It reflects what was true when it was written, and anyone who can influence what a run stores can influence what later runs read — so prefer triggers that only people with push access can reach, and treat `pull_request_target` and similar with the care you would give any other write-capable trigger.
-
-The memory store is narrower than all of `~/.claude/projects`, which is where session transcripts live: this action only touches the `memory/` subdirectories, so a transcript cache and this one can coexist in the same job without clobbering each other.
 
 ## Development
 
