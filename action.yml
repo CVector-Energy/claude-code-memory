@@ -1,0 +1,117 @@
+name: 'Claude Code memory'
+description: >
+  Restore the repo-wide Claude Code auto-memory store, and register a job-end hook that saves it back. Use this once, before the Claude Code step. There is no companion save action: `actions/cache` runs its save in a post step, so the store is persisted when the job finishes no matter which step ran last or whether it failed.
+
+inputs:
+  snapshot:
+    description: >
+      Take a copy of the restored store before the agent runs, so a caller that must not persist this run's edits can roll back to it (see `snapshot-path`). Off by default: the whole point of the hook is that the agent's edits persist.
+    required: false
+    default: 'false'
+
+outputs:
+  path:
+    description: Absolute path of this workspace's memory directory.
+    value: ${{ steps.keys.outputs.path }}
+  found:
+    description: '"true" when a store was restored and it contains at least one memory.'
+    value: ${{ steps.inspect.outputs.found }}
+  count:
+    description: Number of memory files restored.
+    value: ${{ steps.inspect.outputs.count }}
+  snapshot-path:
+    description: >
+      Where the pre-run copy of the store was written, when `snapshot` is enabled. Copy it back over `path` to make the job-end hook persist the store as it was before this run.
+    value: ${{ steps.keys.outputs.snapshot }}
+  key:
+    description: >
+      Cache key the job-end hook saves under. Exposed for a job that can fail by design: `actions/cache` declares `post-if: success()`, so its save is skipped once any step has failed, and such a caller must add its own `actions/cache/save` on the failure path using this key.
+    value: ${{ steps.keys.outputs.key }}
+  glob:
+    description: Cache path glob to pair with `key` when saving on a failure path.
+    value: ${{ steps.keys.outputs.glob }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve memory path and cache keys
+      id: keys
+      shell: bash
+      env:
+        WORKSPACE: ${{ github.workspace }}
+        RUN_ID: ${{ github.run_id }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+        RUNNER_TEMP_DIR: ${{ runner.temp }}
+      run: |
+        set -euo pipefail
+        # Claude Code derives a project's transcript/memory directory name by
+        # replacing every non-alphanumeric character of the cwd with "-", so
+        # /home/runner/work/my-repo/my-repo becomes
+        # -home-runner-work-my-repo-my-repo.
+        SLUG=$(printf '%s' "$WORKSPACE" | tr -c 'A-Za-z0-9_.' '-')
+        # The key carries no branch or ref component on purpose. The memory
+        # store is knowledge about the repository, not about one branch, and
+        # a scheduled job needs to read whatever the last run wrote.
+        # (GitHub still scopes cache *reads* to the current branch plus the
+        # default branch, so a store saved on a feature branch is invisible to
+        # a scheduled run on main. That is a platform limit, not this key's.)
+        #
+        # The primary key is unique per run, which is what arms the job-end
+        # hook: actions/cache skips its post-step save after an exact-key hit,
+        # so a key that can never already exist makes every run save. Reads all
+        # come through the `restore-keys` prefix, newest entry first.
+        {
+          echo "path=$HOME/.claude/projects/$SLUG/memory"
+          echo "glob=$HOME/.claude/projects/*/memory"
+          echo "key=claude-memory-v1-${RUN_ID}-${RUN_ATTEMPT}"
+          echo "restore-key=claude-memory-v1-"
+          echo "snapshot=$RUNNER_TEMP_DIR/claude-code-memory-snapshot"
+        } >> "$GITHUB_OUTPUT"
+
+    # The root action, not cache/restore: it restores here and registers the
+    # matching save as a post step. Narrower than the ~/.claude/projects path a
+    # session-transcript cache would use — this one only touches the memory/
+    # subdirectories, so both can be cached in the same job without one
+    # clobbering the other.
+    - name: Restore memory store, and save it at job end
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.keys.outputs.glob }}
+        key: ${{ steps.keys.outputs.key }}
+        restore-keys: |
+          ${{ steps.keys.outputs.restore-key }}
+
+    - name: Inspect restored store
+      id: inspect
+      shell: bash
+      env:
+        MEMORY_PATH: ${{ steps.keys.outputs.path }}
+        SNAPSHOT_PATH: ${{ steps.keys.outputs.snapshot }}
+        SNAPSHOT: ${{ inputs.snapshot }}
+      run: |
+        set -euo pipefail
+        # The post-step save fails when nothing matches its path glob. An agent
+        # that pruned every memory leaves the directory empty, and that empty
+        # store is exactly what we need to persist.
+        mkdir -p "$MEMORY_PATH"
+
+        # MEMORY.md is the index, not a memory; don't count it.
+        COUNT=$(find "$MEMORY_PATH" -name '*.md' ! -name 'MEMORY.md' -type f | wc -l | tr -d ' ')
+        echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+        if [ "$COUNT" -gt 0 ]; then
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "Restored $COUNT memories from $MEMORY_PATH."
+        else
+          echo "found=false" >> "$GITHUB_OUTPUT"
+          echo "No cached memories found; this run starts with none."
+        fi
+
+        if [ "$SNAPSHOT" = "true" ]; then
+          rm -rf "$SNAPSHOT_PATH"
+          cp -a "$MEMORY_PATH" "$SNAPSHOT_PATH"
+          echo "Snapshotted the pre-run store to $SNAPSHOT_PATH."
+        fi
+
+branding:
+  icon: database
+  color: orange
