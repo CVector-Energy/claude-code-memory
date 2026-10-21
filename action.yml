@@ -1,8 +1,19 @@
 name: 'Claude Code memory'
 description: >
-  Restore the repo-wide Claude Code auto-memory store, and save it back when the job finishes.
+  Restore the repo-wide Claude Code auto-memory store from S3, and save it back when the job finishes.
 
 inputs:
+  bucket:
+    description: S3 bucket holding the store. Each repository's store is under `<owner>/<repo>/memory/` in it.
+    required: true
+  role-to-assume:
+    description: >
+      ARN of the IAM role that reads and writes the bucket, assumed with the job's GitHub OIDC token. The job needs `id-token: write`. The credentials stay inside this action, so the agent does not inherit them.
+    required: true
+  aws-region:
+    description: Region of the bucket.
+    required: false
+    default: 'us-east-1'
   snapshot:
     description: >
       Take a copy of the restored store before the agent runs, so a caller that must not persist this run's edits can roll back to it (see `snapshot-path`). Off by default: the whole point is that the agent's edits persist.
