@@ -21,33 +21,14 @@ function memoryPath(home, workspace) {
 }
 
 /**
- * Cache paths cover every project slug, so a store written under a different
- * workspace path is at least restored rather than reported missing.
+ * Where a repository's store lives in the bucket. Keyed by repository and nothing narrower: what an agent learns is knowledge about the repository, not about one branch, and a scheduled job needs to read whatever the last run wrote.
  */
-function memoryGlob(home) {
-  return `${home}/.claude/projects/*/memory`;
+function objectPrefix(repository) {
+  return `${repository}/memory/`;
 }
 
-export const KEY_PREFIX = "claude-memory-v1-";
-
-/**
- * The key carries no branch or ref on purpose: what an agent learns is knowledge
- * about the repository, not about one branch, and a scheduled job needs to read
- * whatever the last run wrote. It is unique per run so the save always writes a
- * new entry; reads all come through the prefix, newest first.
- */
-function cacheKey(runId, runAttempt) {
-  return `${KEY_PREFIX}${runId}-${runAttempt}`;
+function relativePath(prefix, key) {
+  return key.slice(prefix.length);
 }
 
-function restoreKeys() {
-  return [KEY_PREFIX];
-}
-
-export {
-  cacheKey,
-  memoryGlob,
-  memoryPath,
-  restoreKeys,
-  slugForWorkspace,
-};
+export { memoryPath, objectPrefix, relativePath, slugForWorkspace };

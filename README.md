@@ -1,12 +1,12 @@
 # Claude Code Memory Action
 
-Carry [Claude Code](https://claude.com/claude-code)'s auto-memory store between CI runs, so an agent starts each run with what earlier runs learned about the repository instead of meeting it fresh every time. The updated memories are saved to the cache at the job-end hook.
+Carry [Claude Code](https://claude.com/claude-code)'s auto-memory store between CI runs, so an agent starts each run with what earlier runs learned about the repository instead of meeting it fresh every time. The store lives in S3 and the updated memories are written back at the job-end hook.
 
 ## What This Action Does
 
 1. Derives the on-disk path of Claude Code's auto-memory store for this workspace
-2. Restores the store from the repository-wide cache, newest entry first
-3. Registers a post step that saves the store when the job finishes, pass or fail
+2. Assumes an IAM role with the job's GitHub OIDC token and downloads the repository's store from S3
+3. Registers a post step that writes back what the run changed when the job finishes, pass or fail
 4. Reports how many memories were restored, so a workflow can branch on an empty store
 5. Optionally snapshots the pre-run store, for a job that must be able to roll back
 
@@ -16,12 +16,18 @@ Carry [Claude Code](https://claude.com/claude-code)'s auto-memory store between 
 jobs:
   agent:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write # assume the memory role
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Cache Claude Code memory
+      - name: Restore Claude Code memory
         uses: CVector-Energy/claude-code-memory@main
+        with:
+          bucket: my-agent-memory-bucket
+          role-to-assume: arn:aws:iam::123456789012:role/MyAgentMemory
 
       - name: Run Claude Code
         uses: anthropics/claude-code-action@v1
@@ -36,6 +42,9 @@ Nothing else is required, and there is nothing to add for a job that fails: the 
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
+| `bucket` | S3 bucket holding the store; this repository's is under `<owner>/<repo>/memory/` | Yes | |
+| `role-to-assume` | IAM role that reads and writes the bucket, assumed with the job's OIDC token | Yes | |
+| `aws-region` | Region of the bucket | No | `us-east-1` |
 | `snapshot` | Copy the restored store aside before the agent runs, so the caller can roll back to it (see `snapshot-path`). Off by default: the point is that the agent's edits persist. | No | `false` |
 
 ## Outputs
@@ -51,21 +60,29 @@ Nothing else is required, and there is nothing to add for a job that fails: the 
 
 **The store is saved even when the job is failing.**
 
-Claude Code stores auto-memory at `~/.claude/projects/<sanitized-cwd>/memory/`, where the directory name is the working directory with its separators replaced — on a runner, `/home/runner/work/my-repo/my-repo` becomes `-home-runner-work-my-repo-my-repo`. This action computes that same path, so the cached path is by construction the path Claude Code reads.
+Claude Code stores auto-memory at `~/.claude/projects/<sanitized-cwd>/memory/`, where the directory name is the working directory with its separators replaced — on a runner, `/home/runner/work/my-repo/my-repo` becomes `-home-runner-work-my-repo-my-repo`. This action computes that same path, so the restored path is by construction the path Claude Code reads.
 
-The action aims to share knowledge broadly across runs on the repo. GitHub cache mechanism limits this somewhat; memory saved on a branch won't be accessible to other branches unless it is merged to the default branch.
+**Every run of the repository shares one store.** S3 rather than the Actions cache, because a cache entry saved by a pull request run is visible only to that pull request, and the cache evicts whatever has not been read lately once it fills — which a repository caching container images fills within a day.
 
-**Neither step can fail your job.** A cache miss is normal and a cache outage should not turn a build red, so both the restore and the save log a warning and carry on. The worst case is an agent that starts without prior memory.
+**Concurrent runs do not overwrite each other.** The save writes back only the files this run added, changed or deleted, compared with what it restored; a file it never touched is left as it is in the bucket, since another run may have changed it meanwhile. A deletion is skipped when another run has since rewritten the file. `MEMORY.md`, the index every run edits, is merged line by line when two runs both changed it. Enable versioning on the bucket to recover from a bad run.
+
+**A missing store is never saved.** An emptied store is still a directory, and its deletions are written back. If the directory itself is gone, the save does nothing rather than delete every memory.
+
+**The credentials stay inside the action.** The role is assumed by the action itself rather than by a credentials step that would export keys into the job's environment, where the agent would find them. The job still holds `id-token: write`, so scope the role to the bucket and nothing else.
+
+**Neither step can fail your job.** An outage should not turn a build red, so both the restore and the save log a warning and carry on. The worst case is an agent that starts without prior memory.
 
 ## Rolling Back a Run's Edits
 
-A job that prunes the store as part of its work — promoting memories into documentation, for instance — should only persist the pruning if the rest of the job succeeded. Enable `snapshot` and copy it back when it did not:
+A job that prunes the store as part of its work — promoting memories into documentation, for instance — should only persist the pruning if the rest of the job succeeded. Enable `snapshot` and copy it back when it did not; the save then finds nothing changed and writes nothing:
 
 ```yaml
-      - name: Cache Claude Code memory
+      - name: Restore Claude Code memory
         id: memory
         uses: CVector-Energy/claude-code-memory@main
         with:
+          bucket: my-agent-memory-bucket
+          role-to-assume: arn:aws:iam::123456789012:role/MyAgentMemory
           snapshot: 'true'
 
       # ... the agent prunes the store, then something fails ...

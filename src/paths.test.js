@@ -20,23 +20,14 @@ test("the memory path is the store Claude Code actually reads", () => {
   );
 });
 
-test("the cache glob covers every project slug", () => {
+test("objects live under the repository's own prefix", () => {
   assert.equal(
-    paths.memoryGlob("/home/runner"),
-    "/home/runner/.claude/projects/*/memory",
+    paths.objectPrefix("CVector-Energy/ui"),
+    "CVector-Energy/ui/memory/",
   );
 });
 
-test("the key is unique per run and attempt", () => {
-  assert.notEqual(paths.cacheKey("1", "1"), paths.cacheKey("1", "2"));
-  assert.notEqual(paths.cacheKey("1", "1"), paths.cacheKey("2", "1"));
-});
-
-test("the key carries no branch or ref component", () => {
-  // A branch in the key would hide the last run's store from a scheduled job.
-  assert.equal(paths.cacheKey("7", "1"), "claude-memory-v1-7-1");
-});
-
-test("every key starts with the prefix reads fall back to", () => {
-  assert.ok(paths.cacheKey("7", "1").startsWith(paths.restoreKeys()[0]));
+test("a store path round-trips through its object key", () => {
+  const prefix = paths.objectPrefix("o/r");
+  assert.equal(paths.relativePath(prefix, `${prefix}nested/a.md`), "nested/a.md");
 });
