@@ -16,5 +16,10 @@
   "devDependencies": {
     "esbuild": "0.27.2"
   },
-  "type": "module"
+  "type": "module",
+  "overrides": {
+    "@actions/http-client": {
+      "undici": "8.12.2"
+    }
+  }
 }
