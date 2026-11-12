@@ -1,5 +1,7 @@
 name: GitHub Actions Static Analysis
 
+# This file is owned by the cvec-management-account. Local edits will be reverted.
+
 on:
   push:
     branches: [main]
@@ -54,9 +56,9 @@ jobs:
           permission-contents: read
 
       - name: Run zizmor
-        uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
+        uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
         with:
-          version: 1.25.2
+          version: 1.32.0
           advanced-security: false
           annotations: true
           token: ${{ steps.app.outputs.token || github.token }}
