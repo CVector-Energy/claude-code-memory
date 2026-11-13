@@ -40,7 +40,7 @@ jobs:
         with:
           persist-credentials: false
 
-      # zizmor's online audits (impostor-commit) resolve every `uses:` against the GitHub API. The default GITHUB_TOKEN only reaches this repository, so a reusable workflow or action pinned to a private CVector repository, such as CVector-Energy/.github, aborts the whole run with "missing or you have no access".
+      # zizmor's online audits (impostor-commit) resolve every `uses:` against the GitHub API. The default GITHUB_TOKEN only reaches this repository, so a reusable workflow or action pinned to a private CVector repository, such as CVector-Energy/meta-software or CVector-Energy/.github, aborts the whole run with "missing or you have no access".
       - name: Create GitHub App Token able to read the shared workflow repository
         id: app
         # A public repository cannot read the APP_PRIVATE_KEY organization secret, whose visibility is limited to private repositories, and a pull request from a fork receives no secrets at all. Neither case can reference a private workflow, so skip the token instead of failing the job.
@@ -52,6 +52,7 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: |
             .github
+            meta-software
             ${{ github.event.repository.name }}
           permission-contents: read
 
