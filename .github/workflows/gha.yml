@@ -1,6 +1,6 @@
 name: GitHub Actions Static Analysis
 
-# This file is owned by the cvec-management-account. Local edits will be reverted.
+# This file is managed from CVector-Energy/meta-software (fleet/templates/gha.yml) and is replaced at each meta-software release. Local edits will be reverted.
 
 on:
   push:
